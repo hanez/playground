@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7 -tt
+#!/usr/bin/python3 -tt
 
 """
 Copyright (c) 2015 Johannes Findeisen
@@ -27,6 +27,12 @@ import logging
 import logging.handlers
 import os
 import os.path as path
+import random
+import time
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.jobstores.memory import MemoryJobStore
+from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
 
 __version__ = "0.1"
 
@@ -37,7 +43,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Descriptiom of the program.",
         epilog="Some longer description",
-        prog="cliskel.py")
+        prog="test.py")
 
     parser.add_argument("--version", action="version", version="%(prog)s " + str(__version__))
 
@@ -53,8 +59,14 @@ def parse_args():
     parser.add_argument("-c", "--logcount", default=5, type=int,
                         help="maximum number of logfiles in rotation (default: 5)")
 
-    parser.add_argument("-m", "--logsize", default=10485760, type=int,
+    parser.add_argument("-m", "--logsize", default=104857600000, type=int,
                         help="maximum logfile size in bytes (default: 10485760)")
+
+    parser.add_argument("-t", "--threads", default=1000, type=int,
+                        help="maximum number of scheduler threads (default: 3500)")
+
+    parser.add_argument("-p", "--processes", default=100, type=int,
+                        help="number of scheduler processes (default: 0)")
 
     output = parser.add_mutually_exclusive_group()
     output.add_argument("-q", "--quiet", action="store_const", dest="loglevel", const=logging.ERROR,
@@ -72,8 +84,26 @@ def parse_args():
     return parser.parse_args()
 
 
+def handle_job(**kwargs):
+    msg = "running job: " + kwargs['id'] + " interval: " + kwargs['interval']
+    print(msg)
+    logger.info(msg)
+    for i in range(10):
+        os.urandom(100)
+
+    time.sleep(5)
+    logger.info(msg + " FINISHED!")
+    #print(kwargs)
+    #for key, value in kwargs
+    #logger.info("handle_job called")
+    #time.sleep(random.randint(1, 59))
+    #logger.info(kwargs)
+
+
 def main():
     args = parse_args()
+
+    print(args)
 
     logfile = path.expanduser(args.logfile)
     if not path.exists(path.dirname(logfile)):
@@ -85,6 +115,39 @@ def main():
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)
     root_logger.setLevel(args.loglevel)
+
+    jobstores = {
+        'memory': MemoryJobStore()
+    }
+    executors = {
+        'default': ProcessPoolExecutor(args.processes),
+        'threadpool': ThreadPoolExecutor(args.threads)
+    }
+    job_defaults = {
+        'max_instances': 10000
+    }
+    scheduler = BackgroundScheduler(jobstores=jobstores, executors=executors, job_defaults=job_defaults)
+
+    ''' Add jobs here '''
+    x = 1
+    for x in range(1, 10000):
+        interval=random.randint(30, 120)
+        scheduler.add_job(handle_job, 'interval', seconds=interval, kwargs={'id': str(x), 'interval': str(interval)})
+        x += 1
+
+    print("\nStarting Scheduler...")
+
+    scheduler.start()
+
+    while True:
+        time.sleep(1)
+
+    print("Scheduleder started")
+
+    print("Shutting down... please wait!")
+
+    scheduler.shutdown()
+    logging.shutdown()
 
 
 if __name__ == "__main__":
